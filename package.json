@@ -1,14 +1,17 @@
 {
   "name": "iwe-local-gateway",
   "version": "0.1.0",
-  "description": "Local MCP Gateway для multi-agent IWE сессии в VS Code (реализация DP.SC.034 / DP.IWE.005). MVP: stdio transport, in-memory lock manager, 3 tools (gateway_status, acquire_file_lock, release_file_lock).",
+  "description": "Local MCP Gateway для multi-agent IWE сессии в VS Code (реализация DP.SC.034 / DP.IWE.005). Shared lock state через Unix socket daemon.",
   "type": "module",
   "bin": {
-    "iwe-local-gateway": "./dist/server.js"
+    "iwe-local-gateway": "./dist/server.js",
+    "iwe-local-gateway-daemon": "./dist/daemon.js",
+    "iwe-local-gateway-proxy": "./dist/proxy.js"
   },
   "scripts": {
     "build": "tsc",
     "start": "node dist/server.js",
+    "daemon": "node dist/daemon.js",
     "dev": "tsc --watch",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",

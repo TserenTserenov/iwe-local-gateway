@@ -14,15 +14,16 @@ Local MCP Gateway для multi-agent IWE сессии в VS Code.
 - `acquire_file_lock` — pessimistic-lock на файл (TTL 5 мин по умолчанию)
 - `release_file_lock` — освобождение lock'а после commit
 
-## MVP scope
+## Статус реализации
 
-- ✅ stdio transport (MCP standard)
+- ✅ **Unix socket daemon** — единственный процесс, shared lock state (реальный multi-agent)
+- ✅ **stdio proxy** — мост stdio↔socket для подключения Claude Code / Kimikode
+- ✅ **stdio server** — режим MVP для тестов и single-agent
 - ✅ In-memory lock manager с TTL auto-expiry
 - ✅ Path canonicalization (`~/foo` ≡ `/Users/x/foo`)
-- ✅ Agent identity через env `IWE_AGENT_ID`
-- ⏳ Unix socket transport — отдельная итерация (см. DP.IWE.005 §9 Q1)
-- ⏳ Tool-allowlist per agent — отдельная итерация (нужен upstream-routing)
-- ⏳ Upstream-proxy к Aisystant MCP — отдельная итерация
+- ✅ Agent identity через env `IWE_AGENT_ID` (daemon capture + proxy inject)
+- ⏳ Tool-allowlist per agent — следующая итерация
+- ⏳ Upstream-proxy к Aisystant MCP — следующая итерация
 
 ## Установка
 
@@ -33,16 +34,23 @@ npm run build
 npm test
 ```
 
-## Подключение к Claude Code
+## Подключение к Claude Code (daemon-режим)
 
-В `.mcp.json` рабочего workspace:
+**Шаг 1.** Запустить daemon один раз за VS Code сессию:
+
+```bash
+node /Users/tserentserenov/IWE/DS-MCP/local-gateway/dist/daemon.js &
+# или npm run daemon  (из директории local-gateway)
+```
+
+**Шаг 2.** В `.mcp.json` рабочего workspace для каждого агента — proxy:
 
 ```json
 {
   "mcpServers": {
     "iwe-local-gateway": {
       "command": "node",
-      "args": ["/Users/tserentserenov/IWE/DS-MCP/local-gateway/dist/server.js"],
+      "args": ["/Users/tserentserenov/IWE/DS-MCP/local-gateway/dist/proxy.js"],
       "env": {
         "IWE_AGENT_ID": "claude-code"
       }
@@ -51,11 +59,12 @@ npm test
 }
 ```
 
-Для Kimikode — отдельный config с `IWE_AGENT_ID: "kimikode"`.
+Для Kimikode — отдельный `.mcp.json` с `"IWE_AGENT_ID": "kimikode"`.  
+Оба подключаются к одному daemon → один LockManager → shared lock state.
 
-> **Внимание (MVP-ограничение stdio):** каждый peer-агент при stdio-транспорте запускает **свою** копию процесса Gateway, и lock-состояние не разделяется между копиями. Это значит, что в MVP-stdio координация работает **только в пределах одной IDE-сессии одного агента** (полезно как scaffold + тесты), но не разделяет lock'и между Claude и Kimikode. Для реального multi-agent — нужен Unix socket transport (см. DP.IWE.005 §9 Q1). MVP — это первый кирпич; следующий шаг — socket. Пользователь предупреждён, не путать с продакшеном.
+> **Stdio-режим (MVP, legacy):** `dist/server.js` — каждый агент в отдельном процессе без разделения state. Полезен для тестов и одиночного агента.
 
-## Пример использования (после установки socket-режима — следующая итерация)
+## Пример использования
 
 ```
 Claude → acquire_file_lock({file: "src/auth.py"})  → ok
@@ -76,10 +85,12 @@ Kimikode → acquire_file_lock({file: "src/auth.py"})
 ## Тесты
 
 ```bash
-npm test
+npm test                      # unit tests (vitest): lock-manager + socket-transport
+node tests/smoke.mjs          # MCP smoke (stdio, 10 checks)
+node tests/daemon-smoke.mjs   # daemon smoke (socket, shared state между 2 агентами)
 ```
 
-Покрытие: 9 тестов lock-manager.ts (acquire/release happy + collisions + TTL expiry + path canonicalization).
+Покрытие unit: lock-manager (11 тестов) + socket-transport (3 теста). Daemon smoke — ключевой интеграционный тест (acquire→collision→release→cross-agent status).
 
 ## Связанные документы
 
