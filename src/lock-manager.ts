@@ -63,6 +63,7 @@ export class LockManager {
     if (existing && existing.holder !== holder) {
       return { ok: false, reason: "collision", holder: existing };
     }
+    // Re-acquire by same holder intentionally refreshes TTL (heartbeat pattern).
     const lock: Lock = {
       file: key,
       holder,

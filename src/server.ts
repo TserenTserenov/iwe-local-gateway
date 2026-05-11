@@ -13,6 +13,13 @@ import { z } from "zod";
 import { LockManager } from "./lock-manager.js";
 
 const AGENT_ID = process.env.IWE_AGENT_ID ?? "unknown-agent";
+if (!process.env.IWE_AGENT_ID) {
+  // All agents would share the same lock identity → multi-agent isolation breaks.
+  process.stderr.write(
+    `[iwe-local-gateway] WARNING: IWE_AGENT_ID not set — using "unknown-agent". ` +
+      `Set IWE_AGENT_ID in .mcp.json env to enable per-agent lock isolation.\n`,
+  );
+}
 
 const lockManager = new LockManager();
 
@@ -103,13 +110,19 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     if (result.ok) {
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
+    // Collision is a normal business response (file is busy), not a protocol error.
+    // isError: false lets the agent read the collision details and decide: backoff or switch file.
     return {
-      isError: true,
       content: [
         {
           type: "text",
           text: JSON.stringify(
-            { error: "lock_collision", holder: result.holder },
+            {
+              ok: false,
+              status: "lock_collision",
+              holder: result.holder.holder,
+              expires_at: new Date(result.holder.expiresAt).toISOString(),
+            },
             null,
             2,
           ),

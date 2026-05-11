@@ -71,4 +71,18 @@ describe("LockManager", () => {
     const r = lm.acquire("/tmp/foo.py", "kimikode");
     expect(r.ok).toBe(true);
   });
+
+  it("status() prunes expired locks without acquire", async () => {
+    lm.acquire("/tmp/foo.py", "claude", 10); // 10ms TTL
+    await new Promise((r) => setTimeout(r, 20));
+    const s = lm.status();
+    expect(s.locks).toHaveLength(0);
+  });
+
+  it("release of non-existent lock returns ok:true released:false", () => {
+    const r = lm.release("/tmp/never-locked.py", "claude");
+    expect(r.ok).toBe(true);
+    expect(r.released).toBe(false);
+    expect(r.reason).toBe("no_such_lock");
+  });
 });
