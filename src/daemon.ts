@@ -13,6 +13,7 @@ import os from "node:os";
 import path from "node:path";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { LockManager } from "./lock-manager.js";
+import { PeerStatusManager } from "./peer-status-manager.js";
 import { registerTools } from "./tools.js";
 import { SocketTransport } from "./socket-transport.js";
 import type { JSONRPCMessage } from "@modelcontextprotocol/sdk/types.js";
@@ -21,8 +22,9 @@ const SOCKET_DIR = path.join(os.homedir(), ".iwe");
 const SOCKET_PATH = process.env.IWE_GATEWAY_SOCKET ?? path.join(SOCKET_DIR, "gateway.sock");
 const PID_PATH = path.join(SOCKET_DIR, "gateway.pid");
 
-// One LockManager shared across all connected agents.
+// Shared state across all connected agents.
 const sharedLocks = new LockManager();
+const sharedPeerStatus = new PeerStatusManager();
 
 fs.mkdirSync(SOCKET_DIR, { recursive: true });
 
@@ -39,7 +41,7 @@ const netServer = net.createServer(async (socket) => {
     { capabilities: { tools: {} } },
   );
 
-  registerTools(mcpServer, sharedLocks, () => agentId);
+  registerTools(mcpServer, sharedLocks, () => agentId, sharedPeerStatus);
 
   const transport = new SocketTransport(socket);
   await mcpServer.connect(transport);
@@ -57,6 +59,7 @@ const netServer = net.createServer(async (socket) => {
   };
 
   transport.onclose = () => {
+    sharedPeerStatus.remove(agentId);
     process.stderr.write(`[iwe-local-gateway] agent disconnected: ${agentId}\n`);
   };
 });

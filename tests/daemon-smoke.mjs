@@ -117,7 +117,25 @@ try {
   assert(statusPayload.locks.length === 1, "status: 1 lock visible to claude");
   assert(statusPayload.locks[0].holder === "kimikode", "lock holder = kimikode");
 
-  console.log("\nALL DAEMON SMOKE TESTS PASSED — shared lock state works ✅");
+  // 5. Peer status: claude announces focus
+  const upd = await claude.call("tools/call", {
+    name: "update_peer_status",
+    arguments: { focus: "src/auth.ts", intent: "рефакторинг OAuth flow", awaiting_decision: false },
+  });
+  const updPayload = JSON.parse(upd.result.content[0].text);
+  assert(updPayload.ok === true, "update_peer_status: ok");
+  assert(updPayload.status.agent_id === "claude-code", "status.agent_id = claude-code");
+
+  // 6. Kimikode sees claude's status
+  const listRes = await kimikode.call("tools/call", {
+    name: "list_peer_statuses",
+    arguments: {},
+  });
+  const listPayload = JSON.parse(listRes.result.content[0].text);
+  assert(listPayload.statuses.length === 1, "list_peer_statuses: 1 status");
+  assert(listPayload.statuses[0].focus === "src/auth.ts", "focus = src/auth.ts");
+
+  console.log("\nALL DAEMON SMOKE TESTS PASSED — shared lock state + peer status works ✅");
 
   claude.close();
   kimikode.close();

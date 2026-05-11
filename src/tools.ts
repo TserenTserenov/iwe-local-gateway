@@ -1,4 +1,4 @@
-// see DP.SC.034, DP.IWE.005, WP-150 Ф6
+// see DP.SC.034, DP.SC.035, DP.IWE.005, WP-150 Ф6+Ф7
 // Shared tool definitions + registration — используется и daemon.ts (socket), и server.ts (stdio).
 
 import { z } from "zod";
@@ -8,6 +8,7 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import type { LockManager } from "./lock-manager.js";
+import type { PeerStatusManager } from "./peer-status-manager.js";
 
 const acquireSchema = z.object({
   file: z.string().min(1, "file required"),
@@ -16,6 +17,12 @@ const acquireSchema = z.object({
 
 const releaseSchema = z.object({
   file: z.string().min(1, "file required"),
+});
+
+const updateStatusSchema = z.object({
+  focus: z.string().min(1, "focus required"),
+  intent: z.string().min(1, "intent required"),
+  awaiting_decision: z.boolean().optional(),
 });
 
 export const TOOL_LIST = [
@@ -55,6 +62,30 @@ export const TOOL_LIST = [
       additionalProperties: false,
     },
   },
+  {
+    name: "update_peer_status",
+    description:
+      "Объявить статус агента: что делаю (focus), почему (intent), заблокирован ли. Другие peer-агенты видят эту информацию через list_peer_statuses — координация без lock. Вызывать при начале задачи и по завершении.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        focus: { type: "string", description: "Что делает агент (файл или задача)" },
+        intent: { type: "string", description: "Контекст: зачем, для какой цели" },
+        awaiting_decision: {
+          type: "boolean",
+          description: "true если агент заблокирован и ждёт решения пилота",
+        },
+      },
+      required: ["focus", "intent"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "list_peer_statuses",
+    description:
+      "Список статусов всех peer-агентов: кто над чем работает, кто заблокирован. Вызывать перед началом работы для проверки намерений других агентов (coordination без lock).",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+  },
 ] as const;
 
 type ToolResult = {
@@ -77,6 +108,7 @@ export function registerTools(
   server: Server,
   lockManager: LockManager,
   getAgentId: () => string,
+  peerStatus?: PeerStatusManager,
 ): void {
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
     tools: TOOL_LIST,
@@ -114,6 +146,24 @@ export function registerTools(
       const result = lockManager.release(parsed.data.file, agentId);
       if (!result.ok) return { isError: true, content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
       return text(result);
+    }
+
+    if (name === "update_peer_status") {
+      if (!peerStatus) return err("peer_status_not_available: run in daemon mode");
+      const parsed = updateStatusSchema.safeParse(args);
+      if (!parsed.success) return err(`invalid_arguments: ${parsed.error.message}`);
+      const status = peerStatus.update(
+        agentId,
+        parsed.data.focus,
+        parsed.data.intent,
+        parsed.data.awaiting_decision ?? false,
+      );
+      return text({ ok: true, status });
+    }
+
+    if (name === "list_peer_statuses") {
+      if (!peerStatus) return err("peer_status_not_available: run in daemon mode");
+      return text({ statuses: peerStatus.list() });
     }
 
     return err(`tool_not_available: ${name}`);

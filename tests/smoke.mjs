@@ -63,11 +63,11 @@ try {
 
   // 2. tools/list
   const tools = await call("tools/list", {});
-  assert(tools.result?.tools?.length === 3, "tools/list: 3 tools");
+  assert(tools.result?.tools?.length === 5, "tools/list: 5 tools");
   const names = tools.result.tools.map((t) => t.name).sort();
   assert(
     JSON.stringify(names) ===
-      JSON.stringify(["acquire_file_lock", "gateway_status", "release_file_lock"]),
+      JSON.stringify(["acquire_file_lock", "gateway_status", "list_peer_statuses", "release_file_lock", "update_peer_status"]),
     "tools/list: правильные имена",
   );
 
