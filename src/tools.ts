@@ -9,6 +9,7 @@ import {
 import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import type { LockManager } from "./lock-manager.js";
 import type { PeerStatusManager } from "./peer-status-manager.js";
+import type { metrics as MetricsAPI } from "./metrics-manager.js";
 
 const acquireSchema = z.object({
   file: z.string().min(1, "file required"),
@@ -109,6 +110,7 @@ export function registerTools(
   lockManager: LockManager,
   getAgentId: () => string,
   peerStatus?: PeerStatusManager,
+  gatewayMetrics?: typeof MetricsAPI,
 ): void {
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
     tools: TOOL_LIST,
@@ -130,8 +132,12 @@ export function registerTools(
         agentId,
         (parsed.data.ttl_seconds ?? 300) * 1000,
       );
-      if (result.ok) return text(result);
+      if (result.ok) {
+        gatewayMetrics?.recordAcquire(result.lock.file);
+        return text(result);
+      }
       // Collision is a normal business response (file is busy), not a protocol error.
+      gatewayMetrics?.recordCollision();
       return text({
         ok: false,
         status: "lock_collision",
@@ -145,6 +151,7 @@ export function registerTools(
       if (!parsed.success) return err(`invalid_arguments: ${parsed.error.message}`);
       const result = lockManager.release(parsed.data.file, agentId);
       if (!result.ok) return { isError: true, content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+      if (result.released) gatewayMetrics?.recordRelease(parsed.data.file);
       return text(result);
     }
 

@@ -14,6 +14,7 @@ import path from "node:path";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { LockManager } from "./lock-manager.js";
 import { PeerStatusManager } from "./peer-status-manager.js";
+import { metrics } from "./metrics-manager.js";
 import { registerTools } from "./tools.js";
 import { SocketTransport } from "./socket-transport.js";
 import type { JSONRPCMessage } from "@modelcontextprotocol/sdk/types.js";
@@ -41,7 +42,7 @@ const netServer = net.createServer(async (socket) => {
     { capabilities: { tools: {} } },
   );
 
-  registerTools(mcpServer, sharedLocks, () => agentId, sharedPeerStatus);
+  registerTools(mcpServer, sharedLocks, () => agentId, sharedPeerStatus, metrics);
 
   const transport = new SocketTransport(socket);
   await mcpServer.connect(transport);
@@ -58,8 +59,10 @@ const netServer = net.createServer(async (socket) => {
     sdkHandler?.(msg);
   };
 
+  metrics.setActiveAgents(netServer.connections ?? 0);
   transport.onclose = () => {
     sharedPeerStatus.remove(agentId);
+    metrics.setActiveAgents(Math.max(0, (netServer.connections ?? 1) - 1));
     process.stderr.write(`[iwe-local-gateway] agent disconnected: ${agentId}\n`);
   };
 });
