@@ -16,6 +16,11 @@ export interface PeerStatus {
 
 const STATUS_DIR = path.join(os.homedir(), ".iwe", "peer-status");
 
+// Prevent path traversal: agentId like "../../.bash_profile" would escape STATUS_DIR.
+function safeFilename(agentId: string): string {
+  return agentId.replace(/[^a-zA-Z0-9_-]/g, "_");
+}
+
 export class PeerStatusManager {
   private readonly statuses = new Map<string, PeerStatus>();
 
@@ -28,11 +33,11 @@ export class PeerStatusManager {
       updated_at: new Date().toISOString(),
     };
     this.statuses.set(agentId, status);
-    // Best-effort persist to ~/.iwe/peer-status/<agentId>.json for external tools.
+    // Best-effort persist to ~/.iwe/peer-status/<safeFilename>.json for external tools.
     try {
       fs.mkdirSync(STATUS_DIR, { recursive: true });
       fs.writeFileSync(
-        path.join(STATUS_DIR, `${agentId}.json`),
+        path.join(STATUS_DIR, `${safeFilename(agentId)}.json`),
         JSON.stringify(status, null, 2),
         "utf8",
       );
@@ -48,6 +53,6 @@ export class PeerStatusManager {
 
   remove(agentId: string): void {
     this.statuses.delete(agentId);
-    try { fs.unlinkSync(path.join(STATUS_DIR, `${agentId}.json`)); } catch { /* ignore */ }
+    try { fs.unlinkSync(path.join(STATUS_DIR, `${safeFilename(agentId)}.json`)); } catch { /* ignore */ }
   }
 }

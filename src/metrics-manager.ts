@@ -45,9 +45,11 @@ export const metrics = {
   },
   recordRelease(file: string): void {
     METRICS.releases_total++;
-    METRICS.active_locks = Math.max(0, METRICS.active_locks - 1);
-    const start = acquiredAt.get(file);
-    if (start) {
+    // Guard: only decrement if we actually tracked this acquire.
+    // Prevents double-decrement when explicit release + TTL expiry both fire.
+    if (acquiredAt.has(file)) {
+      METRICS.active_locks = Math.max(0, METRICS.active_locks - 1);
+      const start = acquiredAt.get(file)!;
       acquiredAt.delete(file);
       METRICS.lock_durations_ms = [
         ...METRICS.lock_durations_ms.slice(-99),

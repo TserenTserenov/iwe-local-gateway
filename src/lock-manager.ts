@@ -35,6 +35,10 @@ const DEFAULT_TTL_MS = 5 * 60 * 1000; // 5 minutes, see DP.IWE.005 §9 Q1
 export class LockManager {
   private readonly locks = new Map<string, Lock>();
 
+  // Fired when a lock is silently dropped by TTL expiry (not by explicit release).
+  // Consumers (e.g. metrics) use this to keep derived counters consistent.
+  onExpiry?: (canonicalFile: string) => void;
+
   /**
    * Канонизация пути для устранения /., trailing slash и home expansion.
    * Lock на `~/foo` и `/Users/x/foo` должен быть одним lock'ом.
@@ -47,7 +51,10 @@ export class LockManager {
 
   private pruneExpired(now: number = Date.now()): void {
     for (const [key, lock] of this.locks) {
-      if (lock.expiresAt <= now) this.locks.delete(key);
+      if (lock.expiresAt <= now) {
+        this.locks.delete(key);
+        this.onExpiry?.(key);
+      }
     }
   }
 
