@@ -1,0 +1,26 @@
+{
+  "name": "iwe-local-gateway",
+  "version": "0.1.0",
+  "description": "Local MCP Gateway для multi-agent IWE сессии в VS Code (реализация DP.SC.034 / DP.IWE.005). MVP: stdio transport, in-memory lock manager, 3 tools (gateway_status, acquire_file_lock, release_file_lock).",
+  "type": "module",
+  "bin": {
+    "iwe-local-gateway": "./dist/server.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "dev": "tsc --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.0",
+    "vitest": "^4.1.2"
+  }
+}
