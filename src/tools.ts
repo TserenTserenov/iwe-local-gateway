@@ -1,6 +1,9 @@
-// see DP.SC.034, DP.SC.035, DP.IWE.005, WP-150 Ф6+Ф7
+// see DP.SC.034, DP.SC.035, DP.IWE.005, DP.SC.187, WP-150 Ф6+Ф7, WP-149 Ф-local-assembly-delivery
 // Shared tool definitions + registration — используется и daemon.ts (socket), и server.ts (stdio).
 
+import { spawnSync } from "node:child_process";
+import os from "node:os";
+import path from "node:path";
 import { z } from "zod";
 import { createRequire } from "node:module";
 import {
@@ -32,6 +35,11 @@ const updateStatusSchema = z.object({
   focus: z.string().min(1, "focus required"),
   intent: z.string().min(1, "intent required"),
   awaiting_decision: z.boolean().optional(),
+});
+
+const renderGuideSchema = z.object({
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "date must be YYYY-MM-DD"),
+  output_path: z.string().optional(),
 });
 
 export const TOOL_LIST = [
@@ -100,6 +108,20 @@ export const TOOL_LIST = [
     description:
       "Список статусов всех peer-агентов: кто над чем работает, кто заблокирован. Вызывать перед началом работы для проверки намерений других агентов (coordination без lock).",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
+  },
+  {
+    name: "render_personal_guide",
+    description:
+      "Запускает сборку персонального руководства пилота (render-pilot-guides.py --daily). Identity пилота берётся из env PILOT_GITHUB_OWNER. Возвращает статус, путь к файлу руководства и список предупреждений. Реализует DP.SC.187.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        date: { type: "string", description: "Дата руководства в формате YYYY-MM-DD" },
+        output_path: { type: "string", description: "Зарезервировано для будущей локальной записи (Ф2); в Ф1 игнорируется" },
+      },
+      required: ["date"],
+      additionalProperties: false,
+    },
   },
 ] as const;
 
@@ -187,6 +209,57 @@ export function registerTools(
     if (name === "list_peer_statuses") {
       if (!peerStatus) return err("peer_status_not_available: run in daemon mode");
       return text({ statuses: peerStatus.list() });
+    }
+
+    if (name === "render_personal_guide") {
+      const parsed = renderGuideSchema.safeParse(args);
+      if (!parsed.success) return err(`invalid_arguments: ${parsed.error.message}`);
+
+      const pilotOwner = process.env.PILOT_GITHUB_OWNER ?? process.env.GITHUB_OWNER;
+      if (!pilotOwner) {
+        return err("render_not_configured: set PILOT_GITHUB_OWNER in gateway env");
+      }
+
+      const iweHome = process.env.IWE_HOME ?? path.join(os.homedir(), "IWE");
+      const scriptPath =
+        process.env.IWE_RENDER_SCRIPT_PATH ??
+        path.join(iweHome, "DS-autonomous-agents/scripts/render-pilot-guides.py");
+
+      const spawnArgs = [
+        scriptPath,
+        "--daily",
+        `--user=${pilotOwner}`,
+        `--date=${parsed.data.date}`,
+      ];
+
+      const result = spawnSync("python3", spawnArgs, {
+        timeout: 90_000,
+        encoding: "utf8",
+        env: process.env,
+      });
+
+      const warnings: string[] = [];
+      const stderr = result.stderr ?? "";
+
+      if (result.error) {
+        return err(`render_spawn_error: ${result.error.message}`);
+      }
+
+      if (result.status !== 0) {
+        const lastLines = stderr.split("\n").filter(Boolean).slice(-5).join("\n");
+        return text({ status: "fail", guide_path: null, warnings: [lastLines] });
+      }
+
+      if (stderr.includes("YAML fallback")) {
+        warnings.push("knowledge DB unavailable — YAML fallback used for sources");
+      }
+      if (stderr.includes("FAIL=1") || stderr.includes("FAIL=true")) {
+        return text({ status: "fail", guide_path: null, warnings });
+      }
+
+      const guidePath = `guide/${parsed.data.date}.md`;
+      const status = warnings.length > 0 ? "warn" : "ok";
+      return text({ status, guide_path: guidePath, warnings });
     }
 
     return err(`tool_not_available: ${name}`);
