@@ -40,6 +40,7 @@ const updateStatusSchema = z.object({
 const renderGuideSchema = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "date must be YYYY-MM-DD"),
   output_path: z.string().optional(),
+  lang: z.enum(["ru", "en"]).optional().default("ru"),
 });
 
 export const TOOL_LIST = [
@@ -112,12 +113,13 @@ export const TOOL_LIST = [
   {
     name: "render_personal_guide",
     description:
-      "Запускает сборку персонального руководства пилота (render-pilot-guides.py --daily). Identity пилота берётся из env PILOT_GITHUB_OWNER. Возвращает статус, путь к файлу руководства и список предупреждений. Реализует DP.SC.187.",
+      "Запускает сборку персонального руководства пилота (render-pilot-guides.py --daily). Identity пилота берётся из env PILOT_GITHUB_OWNER. Возвращает статус, путь к файлу руководства и список предупреждений. Реализует DP.SC.187. WP-456 Ф2: pass lang='en' for English draft probe; default is ru.",
     inputSchema: {
       type: "object",
       properties: {
         date: { type: "string", description: "Дата руководства в формате YYYY-MM-DD" },
         output_path: { type: "string", description: "Зарезервировано для будущей локальной записи (Ф2); в Ф1 игнорируется" },
+        lang: { type: "string", enum: ["ru", "en"], description: "Язык руководства (default: ru)" },
       },
       required: ["date"],
       additionalProperties: false,
@@ -230,6 +232,7 @@ export function registerTools(
         "--daily",
         `--user=${pilotOwner}`,
         `--date=${parsed.data.date}`,
+        `--lang=${parsed.data.lang}`,
       ];
 
       const result = spawnSync("python3", spawnArgs, {
