@@ -39,6 +39,17 @@ export class LockManager {
   // Consumers (e.g. metrics) use this to keep derived counters consistent.
   onExpiry?: (canonicalFile: string) => void;
 
+  // I14 (WP-458, 2026-07-17): fired when acquire() claims a key whose previous
+  // lock had JUST expired (this specific acquire pruned it, not a background
+  // sweep) and the new holder differs from the old one. Previously this path
+  // was indistinguishable from a fresh acquire — a slow holder still mid-write
+  // past its TTL could lose the lock to someone else with zero signal anywhere.
+  onTtlTakeover?: (
+    canonicalFile: string,
+    previousHolder: Lock,
+    newHolder: string,
+  ) => void;
+
   /**
    * Канонизация пути для устранения /., trailing slash и home expansion.
    * Lock на `~/foo` и `/Users/x/foo` должен быть одним lock'ом.
@@ -64,11 +75,15 @@ export class LockManager {
     ttlMs: number = DEFAULT_TTL_MS,
   ): LockAcquireResult | LockCollisionResult {
     const now = Date.now();
-    this.pruneExpired(now);
     const key = this.canonicalize(file);
+    const beforePrune = this.locks.get(key);
+    this.pruneExpired(now);
     const existing = this.locks.get(key);
     if (existing && existing.holder !== holder) {
       return { ok: false, reason: "collision", holder: existing };
+    }
+    if (beforePrune && !existing && beforePrune.holder !== holder) {
+      this.onTtlTakeover?.(key, beforePrune, holder);
     }
     // Re-acquire by same holder intentionally refreshes TTL (heartbeat pattern).
     const lock: Lock = {

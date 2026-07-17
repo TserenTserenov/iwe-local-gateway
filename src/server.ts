@@ -4,16 +4,20 @@
 // MVP: каждый агент запускает свою копию, lock state НЕ разделяется.
 // Для общего lock state (multi-agent) → daemon.ts (socket transport).
 
+import { randomUUID } from "node:crypto";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { LockManager } from "./lock-manager.js";
 import { registerTools } from "./tools.js";
 
-const AGENT_ID = process.env.IWE_AGENT_ID ?? "unknown-agent";
+// I11 (WP-458): a bare "unknown-agent" literal meant any two misconfigured
+// sessions shared one lock identity — suffix with a per-process UUID so they
+// stay isolated from each other, same as configured ones.
+const AGENT_ID = process.env.IWE_AGENT_ID ?? `unknown-agent-${randomUUID().slice(0, 8)}`;
 if (!process.env.IWE_AGENT_ID) {
   // All agents would share the same lock identity → multi-agent isolation breaks.
   process.stderr.write(
-    `[iwe-local-gateway] WARNING: IWE_AGENT_ID not set — using "unknown-agent". ` +
+    `[iwe-local-gateway] WARNING: IWE_AGENT_ID not set — using "${AGENT_ID}". ` +
       `Set IWE_AGENT_ID in .mcp.json env to enable per-agent lock isolation.\n`,
   );
 }

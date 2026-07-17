@@ -9,16 +9,22 @@
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
+import { randomUUID } from "node:crypto";
 
 const SOCKET_PATH =
   process.env.IWE_GATEWAY_SOCKET ??
   path.join(os.homedir(), ".iwe", "gateway.sock");
 
-const AGENT_ID = process.env.IWE_AGENT_ID ?? "unknown-agent";
+// I11 (WP-458): a bare "unknown-agent" literal meant any two misconfigured
+// sessions shared one lock identity — each thought it was the sole owner and
+// could freely re-acquire the other's lock (acquire() treats same-holder as
+// idempotent, not collision). Suffix with a per-process UUID so unconfigured
+// sessions stay isolated from each other, same as configured ones.
+const AGENT_ID = process.env.IWE_AGENT_ID ?? `unknown-agent-${randomUUID().slice(0, 8)}`;
 
 if (!process.env.IWE_AGENT_ID) {
   process.stderr.write(
-    `[iwe-gateway-proxy] WARNING: IWE_AGENT_ID not set — using "unknown-agent". ` +
+    `[iwe-gateway-proxy] WARNING: IWE_AGENT_ID not set — using "${AGENT_ID}". ` +
       `Set IWE_AGENT_ID in .mcp.json env.\n`,
   );
 }

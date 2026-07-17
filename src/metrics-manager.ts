@@ -13,6 +13,7 @@ export interface GatewayMetrics {
   acquires_total: number;
   releases_total: number;
   collisions_total: number;
+  ttl_takeovers_total: number; // I14, WP-458: acquire() claimed a just-expired lock from a different holder
   active_locks: number;
   active_agents: number;
   lock_durations_ms: number[]; // last 100 completed lock durations
@@ -23,6 +24,7 @@ const METRICS: GatewayMetrics = {
   acquires_total: 0,
   releases_total: 0,
   collisions_total: 0,
+  ttl_takeovers_total: 0,
   active_locks: 0,
   active_agents: 0,
   lock_durations_ms: [],
@@ -41,6 +43,15 @@ export const metrics = {
   },
   recordCollision(): void {
     METRICS.collisions_total++;
+    flush();
+  },
+  recordTtlTakeover(file: string, previousHolder: string, newHolder: string): void {
+    METRICS.ttl_takeovers_total++;
+    // Не только счётчик — I14 просил "не молча", значит виден сразу в daemon-логе,
+    // не только постфактум в JSON-снапшоте.
+    console.warn(
+      `[lock-manager] TTL-takeover: "${file}" перешёл от "${previousHolder}" к "${newHolder}" — предыдущий держатель мог ещё писать`,
+    );
     flush();
   },
   recordRelease(file: string): void {

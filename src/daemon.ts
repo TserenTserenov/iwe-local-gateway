@@ -11,6 +11,7 @@ import net from "node:net";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { randomUUID } from "node:crypto";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { LockManager } from "./lock-manager.js";
 import { PeerStatusManager } from "./peer-status-manager.js";
@@ -30,6 +31,10 @@ const sharedPeerStatus = new PeerStatusManager();
 // Keep metrics.active_locks in sync when TTL silently drops a lock.
 sharedLocks.onExpiry = (file) => metrics.recordRelease(file);
 
+// I14 (WP-458): make TTL-takeover visible instead of indistinguishable from a fresh acquire.
+sharedLocks.onTtlTakeover = (file, previousHolder, newHolder) =>
+  metrics.recordTtlTakeover(file, previousHolder.holder, newHolder);
+
 fs.mkdirSync(SOCKET_DIR, { recursive: true });
 
 // Remove stale socket from previous run.
@@ -40,7 +45,9 @@ let activeConnections = 0;
 const netServer = net.createServer(async (socket) => {
   // Per-connection agent identity captured from MCP initialize clientInfo.name
   // (proxy.ts injects IWE_AGENT_ID there before forwarding to daemon).
-  let agentId = "unknown-agent";
+  // I11 (WP-458): unique fallback — a bare "unknown-agent" let two connections
+  // that both failed to send clientInfo.name silently share one lock identity.
+  let agentId = `unknown-agent-${randomUUID().slice(0, 8)}`;
 
   const mcpServer = new Server(
     { name: "iwe-local-gateway", version: "0.1.0" },
@@ -86,6 +93,13 @@ const netServer = net.createServer(async (socket) => {
 });
 
 netServer.listen(SOCKET_PATH, () => {
+  // I8 (WP-458): Node's default listen() leaves the socket at umask-derived
+  // perms (0755 on this machine — verified live) — group/other could connect,
+  // not just this OS user. "Изоляция на ФС" only holds if the FS perms are
+  // actually owner-only; they weren't. Same-user process impersonation
+  // (ВЫ-9, spoofable clientInfo.name) is a separate, unresolved design
+  // question — this only closes the cross-OS-user vector.
+  fs.chmodSync(SOCKET_PATH, 0o600);
   process.stderr.write(
     `[iwe-local-gateway] daemon started pid=${process.pid} socket=${SOCKET_PATH}\n`,
   );

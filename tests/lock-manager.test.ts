@@ -85,4 +85,37 @@ describe("LockManager", () => {
     expect(r.released).toBe(false);
     expect(r.reason).toBe("no_such_lock");
   });
+
+  it("I14: TTL-takeover by a different holder fires onTtlTakeover with both identities", async () => {
+    const takeovers: Array<{ file: string; from: string; to: string }> = [];
+    lm.onTtlTakeover = (file, previousHolder, newHolder) =>
+      takeovers.push({ file, from: previousHolder.holder, to: newHolder });
+
+    lm.acquire("/tmp/foo.py", "claude", 10); // 10ms TTL
+    await new Promise((r) => setTimeout(r, 20));
+    lm.acquire("/tmp/foo.py", "kimikode");
+
+    expect(takeovers).toHaveLength(1);
+    expect(takeovers[0].from).toBe("claude");
+    expect(takeovers[0].to).toBe("kimikode");
+  });
+
+  it("I14: same-holder heartbeat re-acquire is NOT a takeover", () => {
+    const takeovers: unknown[] = [];
+    lm.onTtlTakeover = (...args) => takeovers.push(args);
+
+    lm.acquire("/tmp/foo.py", "claude");
+    lm.acquire("/tmp/foo.py", "claude"); // heartbeat refresh, same holder
+
+    expect(takeovers).toHaveLength(0);
+  });
+
+  it("I14: fresh acquire on a never-locked file is NOT a takeover", () => {
+    const takeovers: unknown[] = [];
+    lm.onTtlTakeover = (...args) => takeovers.push(args);
+
+    lm.acquire("/tmp/never-locked.py", "claude");
+
+    expect(takeovers).toHaveLength(0);
+  });
 });
