@@ -106,6 +106,8 @@ netServer.listen(SOCKET_PATH, () => {
 });
 
 fs.writeFileSync(PID_PATH, String(process.pid), "utf8");
+// I10 (WP-458): PID file is security-relevant — keep it owner-only.
+try { fs.chmodSync(PID_PATH, 0o600); } catch { /* ignore */ }
 
 function shutdown() {
   netServer.close();

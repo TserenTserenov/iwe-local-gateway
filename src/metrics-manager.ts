@@ -86,6 +86,8 @@ function flush() {
   METRICS.updated_at = new Date().toISOString();
   try {
     fs.writeFileSync(METRICS_PATH, JSON.stringify(METRICS, null, 2), "utf8");
+    // I10 (WP-458): keep metrics file owner-only — default umask leaves it 0644.
+    fs.chmodSync(METRICS_PATH, 0o600);
   } catch {
     /* non-fatal */
   }
