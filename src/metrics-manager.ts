@@ -37,8 +37,12 @@ const acquiredAt = new Map<string, number>(); // key=canonicalFile
 export const metrics = {
   recordAcquire(file: string): void {
     METRICS.acquires_total++;
-    METRICS.active_locks++;
-    acquiredAt.set(file, Date.now());
+    // A same-holder acquire renews the existing lock. Count the call, but do
+    // not count a second active lock or restart its lifetime measurement.
+    if (!acquiredAt.has(file)) {
+      METRICS.active_locks++;
+      acquiredAt.set(file, Date.now());
+    }
     flush();
   },
   recordCollision(): void {
