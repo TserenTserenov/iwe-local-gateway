@@ -2,6 +2,7 @@
 // Shared tool definitions + registration — используется и daemon.ts (socket), и server.ts (stdio).
 
 import { z } from "zod";
+import { createRequire } from "node:module";
 import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
@@ -11,10 +12,12 @@ import type { LockManager } from "./lock-manager.js";
 import type { PeerStatusManager } from "./peer-status-manager.js";
 import type { metrics as MetricsAPI } from "./metrics-manager.js";
 
-// Держать в синхроне с package.json version при релизе — позволяет пилоту
-// и агенту увидеть через gateway_status, что демон отстал от установленного
-// пина после апдейта setup-local-gateway.sh (Fable 5 review, Д1, WP-499 Ф16).
-export const GATEWAY_VERSION = "0.2.0";
+// Both MCP initialization and status identify the installed package version.
+export const GATEWAY_VERSION: string = createRequire(import.meta.url)("../package.json").version;
+
+const gatewayStatusSchema = z.object({
+  file: z.string().min(1, "file must not be empty").optional(),
+}).strict();
 
 const acquireSchema = z.object({
   file: z.string().min(1, "file required"),
@@ -35,8 +38,14 @@ export const TOOL_LIST = [
   {
     name: "gateway_status",
     description:
-      "Возвращает текущее состояние Local MCP Gateway: список активных file-locks с держателями и временем acquire. Используется peer-агентом для проверки 'кто над чем работает' перед началом редактирования.",
-    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+      "Возвращает активные file-locks с держателями, TTL и fencingToken. Необязательный file ограничивает ответ одним нормализованным путём: locks содержит 0 или 1 запись, без приобретения или продления lock. Без file возвращается общий список.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        file: { type: "string", minLength: 1, description: "Путь как в acquire_file_lock; поддерживает ~/ и нормализацию . / .." },
+      },
+      additionalProperties: false,
+    },
   },
   {
     name: "acquire_file_lock",
@@ -126,7 +135,9 @@ export function registerTools(
     const agentId = getAgentId();
 
     if (name === "gateway_status") {
-      return text({ agent_id: agentId, gateway_version: GATEWAY_VERSION, ...lockManager.status() });
+      const parsed = gatewayStatusSchema.safeParse(args === undefined ? {} : args);
+      if (!parsed.success) return err(`invalid_arguments: ${parsed.error.message}`);
+      return text({ agent_id: agentId, gateway_version: GATEWAY_VERSION, ...lockManager.status(parsed.data.file) });
     }
 
     if (name === "acquire_file_lock") {
