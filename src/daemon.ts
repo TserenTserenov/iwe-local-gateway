@@ -17,7 +17,7 @@ import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { LockManager } from "./lock-manager.js";
 import { PeerStatusManager } from "./peer-status-manager.js";
 import { metrics } from "./metrics-manager.js";
-import { registerTools } from "./tools.js";
+import { GATEWAY_VERSION, registerTools } from "./tools.js";
 import { SocketTransport } from "./socket-transport.js";
 import { resolveDaemonPaths } from "./daemon-paths.js";
 import type { JSONRPCMessage } from "@modelcontextprotocol/sdk/types.js";
@@ -80,7 +80,7 @@ const netServer = net.createServer(async (socket) => {
   let agentId = `unknown-agent-${randomUUID().slice(0, 8)}`;
 
   const mcpServer = new Server(
-    { name: "iwe-local-gateway", version: "0.1.0" },
+    { name: "iwe-local-gateway", version: GATEWAY_VERSION },
     { capabilities: { tools: {} } },
   );
 

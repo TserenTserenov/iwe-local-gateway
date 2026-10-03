@@ -1,10 +1,58 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import path from "node:path";
+import os from "node:os";
 import { LockManager } from "../src/lock-manager.js";
 
 describe("LockManager", () => {
   let lm: LockManager;
   beforeEach(() => {
     lm = new LockManager();
+  });
+  afterEach(() => vi.useRealTimers());
+
+  it("addresses one file without changing either holder, TTL or fencing token", () => {
+    const first = lm.acquire("/tmp/selected.ts", "writer-a");
+    const second = lm.acquire("/tmp/unrelated.ts", "writer-b");
+    const before = structuredClone(lm.status().locks);
+
+    expect(first.ok && second.ok).toBe(true);
+    expect(lm.status("/tmp/selected.ts").locks).toEqual([before[0]]);
+    expect(lm.status().locks).toEqual(before);
+  });
+
+  it("uses the same lexical path normalization as acquire and release", () => {
+    const file = path.join(os.homedir(), "gateway-test", "file.ts");
+    const acquired = lm.acquire(file, "writer");
+    expect(acquired.ok).toBe(true);
+    if (!acquired.ok) throw new Error("fixture lock was not acquired");
+    for (const alias of [
+      "~/gateway-test/file.ts",
+      path.join(os.homedir(), "gateway-test") + "/./nested/../file.ts/",
+      path.relative(process.cwd(), file),
+    ]) {
+      expect(lm.status(alias).locks).toEqual([acquired.lock]);
+    }
+  });
+
+  it("returns empty for missing and expired paths without pruning or firing callbacks", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1_000_000);
+    lm = new LockManager();
+    lm.onExpiry = vi.fn();
+    lm.onTtlTakeover = vi.fn();
+    lm.acquire("/tmp/expired.ts", "writer", 10);
+    const active = lm.acquire("/tmp/active.ts", "other", 1000);
+    expect(active.ok).toBe(true);
+    vi.setSystemTime(1_000_020);
+
+    expect(lm.status("/tmp/missing.ts").locks).toEqual([]);
+    expect(lm.status("/tmp/expired.ts").locks).toEqual([]);
+    expect(lm.onExpiry).not.toHaveBeenCalled();
+    expect(lm.onTtlTakeover).not.toHaveBeenCalled();
+    // A non-holder still sees the expired record: addressed reads did not delete it.
+    expect(lm.release("/tmp/expired.ts", "other").reason).toBe("not_held_by_caller");
+    expect(lm.status().locks).toEqual(active.ok ? [active.lock] : []);
+    expect(lm.onExpiry).toHaveBeenCalledExactlyOnceWith("/tmp/expired.ts");
   });
 
   it("acquire returns lock on free file", () => {

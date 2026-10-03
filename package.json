@@ -1,6 +1,6 @@
 {
   "name": "iwe-local-gateway",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Local MCP Gateway для multi-agent IWE сессии в VS Code (реализация DP.SC.034 / DP.IWE.005). Shared lock state через Unix socket daemon.",
   "type": "module",
   "engines": {
@@ -18,7 +18,8 @@
     "dev": "tsc --watch",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:mcp": "npm run build && node tests/gateway-status-smoke.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",

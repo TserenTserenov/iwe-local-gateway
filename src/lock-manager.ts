@@ -158,11 +158,21 @@ export class LockManager {
     return { ok: true, released: true };
   }
 
-  status(): { locks: Lock[]; now: string } {
-    this.pruneExpired();
+  status(file?: string): { locks: Lock[]; now: string } {
+    const now = Date.now();
+    let locks: Lock[];
+    if (file === undefined) {
+      // Preserve the existing full-status sweep and expiry callbacks.
+      this.pruneExpired(now);
+      locks = [...this.locks.values()];
+    } else {
+      // An addressed read must not renew, acquire or prune any lock.
+      const lock = this.locks.get(this.canonicalize(file));
+      locks = lock && lock.expiresAt > now ? [lock] : [];
+    }
     return {
-      locks: [...this.locks.values()],
-      now: new Date().toISOString(),
+      locks,
+      now: new Date(now).toISOString(),
     };
   }
 

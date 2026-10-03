@@ -8,7 +8,7 @@ import { randomUUID } from "node:crypto";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { LockManager } from "./lock-manager.js";
-import { registerTools } from "./tools.js";
+import { GATEWAY_VERSION, registerTools } from "./tools.js";
 
 // I11 (WP-458): a bare "unknown-agent" literal meant any two misconfigured
 // sessions shared one lock identity — suffix with a per-process UUID so they
@@ -24,7 +24,7 @@ if (!process.env.IWE_AGENT_ID) {
 
 const lockManager = new LockManager();
 const server = new Server(
-  { name: "iwe-local-gateway", version: "0.1.0" },
+  { name: "iwe-local-gateway", version: GATEWAY_VERSION },
   { capabilities: { tools: {} } },
 );
 

@@ -10,7 +10,7 @@ Local MCP Gateway для multi-agent IWE сессии в VS Code.
 
 Координирует write-операции между peer-агентами (Claude Code, Kimikode и др.), работающими над одним workspace:
 
-- `gateway_status` — список активных file-locks с держателями
+- `gateway_status` — список активных file-locks; необязательный `file` возвращает состояние одного пути
 - `acquire_file_lock` — pessimistic-lock на файл (TTL 5 мин по умолчанию)
 - `release_file_lock` — освобождение lock'а после commit
 
@@ -85,12 +85,52 @@ Kimikode → acquire_file_lock({file: "src/auth.py"})
 ## Тесты
 
 ```bash
-npm test                      # unit tests (vitest): lock-manager + socket-transport
+npm test                      # unit + in-memory MCP contract tests (Vitest)
+npm run test:mcp              # build + isolated stdio/socket status contract tests
 node tests/smoke.mjs          # MCP smoke (stdio, 10 checks)
-node tests/daemon-smoke.mjs   # daemon smoke (socket, shared state между 2 агентами)
 ```
 
-Покрытие unit: lock-manager (11 тестов) + socket-transport (3 теста). Daemon smoke — ключевой интеграционный тест (acquire→collision→release→cross-agent status).
+Vitest проверяет lock-manager, пути демона, socket transport и MCP-контракт.
+`test:mcp` дополнительно запускает собранные stdio server и отдельный daemon
+с двумя клиентами.
+
+### Адресная проверка блокировки
+
+```json
+{"file": "/absolute/path/to/file"}
+```
+
+Вызов `gateway_status` с этим аргументом возвращает прежние поля
+`agent_id`, `gateway_version`, `locks`, `now`. В `locks` будет одна запись
+или пустой массив, если активной блокировки нет. Фильтр применяется на сервере
+до сериализации. Путь нормализуется так же, как в acquire/release: `~/`,
+`.`, `..` и завершающий слеш; символические ссылки не разрешаются.
+Пустой путь и аргументы неверного типа отклоняются.
+
+Адресный запрос не приобретает, не продлевает и не удаляет блокировки, не
+меняет fencing token или метрики. Истёкшая блокировка не возвращается, но
+её очистка остаётся за существующими операциями. Вызов без аргументов или
+с `{}` сохраняет общий список и прежнюю очистку истёкших блокировок.
+
+`npm run test:mcp` использует отдельный временный socket, файл метрик и
+синтетические идентификаторы; не обновляет статусы живых агентов. Старый
+`tests/daemon-smoke.mjs` не изолирует метрики и статусы: не запускайте его
+рядом с рабочим демоном.
+
+### Доставка новой схемы
+
+Сборка сама по себе не обновляет работающий демон. Он хранит блокировки
+в памяти: перезапуск допускается только в согласованное окно, когда все
+участники прекратили новые операции записи и активных блокировок нет.
+После обновления демона клиентам требуется переподключение/перезагрузка
+MCP-каталога. Проверяйте версию из `package.json` в `initialize.serverInfo`
+и `gateway_status.gateway_version`, а в `tools/list` — необязательный
+`gateway_status.inputSchema.properties.file`. Совпадение версии без новой
+схемы не подтверждает доставку.
+
+Общая приёмка выпуска:
+[Twelve-Factor/MCP](https://github.com/aisystant/DS-ecosystem-development/blob/main/C.IT-Platform/C2.IT-Platform/C2.3.Operations/README.md).
+Изолированные тесты не являются приёмкой текущего рабочего демона.
 
 ## Связанные документы
 
