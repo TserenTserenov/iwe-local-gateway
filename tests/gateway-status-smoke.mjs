@@ -75,6 +75,25 @@ async function verifyStatus(reader, writer, untouchedFiles = []) {
   assert.equal(payload(await call(writer, "release_file_lock", { file: other })).released, true);
 }
 
+async function verifyRepeatedAcquireGauge(reader, metricsFile) {
+  const file = path.join(directory, "repeated.ts");
+  const alias = path.join(directory, "nested", "..", "repeated.ts");
+  const before = JSON.parse(await fs.readFile(metricsFile, "utf8"));
+  const first = payload(await call(reader, "acquire_file_lock", { file }));
+  const repeated = payload(await call(reader, "acquire_file_lock", { file: alias }));
+  const during = JSON.parse(await fs.readFile(metricsFile, "utf8"));
+  assert.equal(repeated.lock.fencingToken, first.lock.fencingToken);
+  assert.equal(during.acquires_total, before.acquires_total + 2);
+  assert.equal(during.active_locks, 1);
+  assert.equal(payload(await call(reader, "gateway_status", {})).locks.length, 1);
+
+  assert.equal(payload(await call(reader, "release_file_lock", { file: alias })).released, true);
+  const after = JSON.parse(await fs.readFile(metricsFile, "utf8"));
+  assert.equal(after.releases_total, before.releases_total + 1);
+  assert.equal(after.active_locks, 0);
+  assert.deepEqual(payload(await call(reader, "gateway_status", {})).locks, []);
+}
+
 async function startDaemon() {
   const socket = path.join(directory, "gateway.sock");
   const metrics = path.join(directory, "metrics.json");
@@ -123,6 +142,7 @@ try {
   const reader = await socketClient(fixture.socket, "reader");
   const writer = await socketClient(fixture.socket, "writer");
   await verifyStatus(reader, writer, fixture.files);
+  await verifyRepeatedAcquireGauge(reader, fixture.files[0]);
   console.log("PASS isolated daemon: two holders, unchanged locks, fencing file and metrics");
 } finally {
   await Promise.all(clients.map((value) => value.close()));
