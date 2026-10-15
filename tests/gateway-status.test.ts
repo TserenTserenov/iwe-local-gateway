@@ -40,7 +40,7 @@ describe("gateway_status MCP contract", () => {
 
   it("advertises the optional filter and a package-derived version without adding a tool", async () => {
     const { tools } = await client.listTools();
-    expect(tools).toHaveLength(5);
+    expect(tools).toHaveLength(6);
     const schema = tools.find((tool) => tool.name === "gateway_status")!.inputSchema;
     expect(schema.properties).toEqual({
       file: { type: "string", minLength: 1, description: expect.any(String) },
